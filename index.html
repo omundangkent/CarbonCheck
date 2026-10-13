@@ -1,0 +1,854 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CarbonCheck</title>
+<meta name="description" content="CarbonCheck: estimate your household's monthly electricity use, cost and carbon footprint, and find ways to save.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: sticky header + tab bar, one 1080px column; each tab is a panel. Readouts are styled like the register of a kWh meter. */
+:root{
+  --bg:#f2f5f6; --surface:#ffffff; --ink:#13252d; --muted:#566a72; --line:#d5dfe2; --soft:#e8eef0;
+  --amber:#f2b01e; --amber-ink:#875800; --tint:#fff3d2;
+  --leaf:#23824f; --leaf-tint:#e2f3e9; --danger:#b8392b;
+  --meter:#102a33; --meter-fg:#ffd45e; --meter-dim:#7f9aa3;
+  --c1:#f2b01e; --c2:#1f7a8c; --c3:#23824f; --c4:#d9644a; --c5:#6b6fc4; --c6:#9a5c8f; --c7:#8a9aa0;
+  --display:"Bricolage Grotesque","Trebuchet MS",sans-serif;
+  --body:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0d171b; --surface:#14232a; --ink:#e5edef; --muted:#98aab0; --line:#27373e; --soft:#1b2c33;
+  --amber:#f5bd3a; --amber-ink:#f5c454; --tint:#2c2511;
+  --leaf:#5cc489; --leaf-tint:#173226; --danger:#ef7a68;
+  --meter:#071014; --meter-fg:#ffd45e; --meter-dim:#6c868e;
+  --c1:#f5bd3a; --c2:#4fb3c6; --c3:#5cc489; --c4:#ef8a70; --c5:#9a9df0; --c6:#cf8fc2; --c7:#7d8e94;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#0d171b; --surface:#14232a; --ink:#e5edef; --muted:#98aab0; --line:#27373e; --soft:#1b2c33;
+  --amber:#f5bd3a; --amber-ink:#f5c454; --tint:#2c2511;
+  --leaf:#5cc489; --leaf-tint:#173226; --danger:#ef7a68;
+  --meter:#071014; --meter-fg:#ffd45e; --meter-dim:#6c868e;
+  --c1:#f5bd3a; --c2:#4fb3c6; --c3:#5cc489; --c4:#ef8a70; --c5:#9a9df0; --c6:#cf8fc2; --c7:#7d8e94;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+img{max-width:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.55}
+h1,h2,h3{font-family:var(--display);line-height:1.15;text-wrap:balance;margin:0}
+h2{font-size:1.6rem;font-weight:800}
+h3{font-size:1.08rem;font-weight:600}
+p{margin:0}
+a{color:var(--amber-ink)}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+
+/* header */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:10;background:var(--surface);border-bottom:1px solid var(--line)}
+.top-in{max-width:1080px;margin:0 auto;padding-inline:16px;display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:8px;padding-block:12px;font-family:var(--display);font-weight:800;font-size:1.25rem;text-decoration:none;color:var(--ink)}
+.brand svg{flex:none}
+.tabs{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;flex:1;min-width:0}
+.tabs::-webkit-scrollbar{display:none}
+.tab{background:none;border:0;padding:16px 12px 13px;border-bottom:3px solid transparent;cursor:pointer;color:var(--muted);font-weight:600;white-space:nowrap}
+.tab:hover{color:var(--ink)}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--amber)}
+
+main{max-width:1080px;margin:0 auto;padding-inline:16px;padding-block:28px 48px}
+.panel{display:grid;gap:24px}
+.lead{color:var(--muted);max-width:62ch}
+.head{display:grid;gap:6px}
+.eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--amber-ink);font-weight:700}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:20px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:20px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:16px}
+.grid2>*,.grid3>*{min-width:0}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);padding:9px 14px;border-radius:8px;cursor:pointer;font-weight:600;text-decoration:none;color:var(--ink)}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--amber);border-color:var(--amber);color:#1d1400}
+.btn.primary:hover{filter:brightness(.96)}
+.btn.ghost{border-color:transparent;background:none;color:var(--muted)}
+.btn.ghost:hover{color:var(--ink)}
+.btn.small{padding:6px 10px;font-size:.88rem}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+
+/* meter register */
+.meter{background:var(--meter);border-radius:12px;padding:18px;display:grid;gap:14px;color:var(--meter-fg)}
+.meter-label{font-family:var(--mono);font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:var(--meter-dim)}
+.register{display:flex;gap:4px;align-items:flex-end;flex-wrap:wrap}
+.digit{font-family:var(--mono);font-weight:700;font-size:clamp(1.6rem,6vw,2.4rem);line-height:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);border-radius:5px;padding:8px 6px;min-width:1.15em;text-align:center}
+.digit.dec{background:rgba(255,212,94,.14)}
+.unit{font-family:var(--mono);font-size:.9rem;color:var(--meter-dim);padding:0 0 6px 6px}
+.meter-sub{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:12px;border-top:1px dashed rgba(255,255,255,.14);padding-top:12px}
+.meter-sub b{display:block;font-family:var(--mono);font-size:1.15rem;color:#f4f7f8;font-variant-numeric:tabular-nums}
+
+/* home */
+.hero{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:32px;align-items:center}
+.hero h1{font-size:clamp(2rem,5vw,3.2rem);font-weight:800;letter-spacing:-.01em}
+.hero h1 em{font-style:normal;background:linear-gradient(transparent 62%,var(--tint) 62%)}
+.hero p{font-size:1.08rem;color:var(--muted);margin-top:14px;max-width:52ch}
+.hero .row{margin-top:22px}
+@media (max-width:780px){.hero{grid-template-columns:1fr}}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:16px;counter-reset:s;padding:0;margin:0;list-style:none}
+.steps li{counter-increment:s;display:grid;gap:6px;padding:16px 0;border-top:2px solid var(--ink)}
+.steps li::before{content:"Step " counter(s);font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--amber-ink);font-weight:700}
+.steps p{color:var(--muted)}
+.formula{font-family:var(--mono);background:var(--soft);border-radius:8px;padding:12px 14px;overflow-x:auto;white-space:nowrap;font-size:.92rem}
+.formula b{color:var(--amber-ink)}
+
+/* calculator */
+.settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:16px}
+.field{display:grid;gap:5px;min-width:0}
+.field label,.lbl{font-size:.8rem;font-weight:600;color:var(--muted)}
+.field input,.field select,.cell input{width:100%;min-width:0;background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:8px 10px}
+.field input:focus,.field select:focus,.cell input:focus{border-color:var(--amber);outline:none;box-shadow:0 0 0 3px var(--tint)}
+.hint{font-size:.8rem;color:var(--muted)}
+.prefix{position:relative}
+.prefix span{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none}
+.prefix input{padding-left:26px}
+
+.addform{display:grid;grid-template-columns:minmax(0,2.2fr) repeat(4,minmax(0,1fr)) auto;gap:12px;align-items:end}
+@media (max-width:820px){.addform{grid-template-columns:repeat(2,minmax(0,1fr))}.addform .wide{grid-column:1/-1}.addform .btn{grid-column:1/-1;justify-content:center}}
+.err{color:var(--danger);font-size:.86rem;font-weight:600}
+
+.list{display:grid}
+.lrow{display:grid;grid-template-columns:minmax(0,2.2fr) repeat(4,minmax(0,.8fr)) minmax(0,.9fr) minmax(0,1fr) 40px;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.lrow.headrow{font-size:.74rem;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding-top:0}
+.lrow .out{font-family:var(--mono);font-size:.92rem;text-align:right;font-variant-numeric:tabular-nums}
+.lrow .headrow-r{text-align:right}
+.cell{min-width:0}
+.cell .lbl{display:none}
+.del{width:34px;height:34px;border-radius:7px;border:1px solid transparent;background:none;cursor:pointer;color:var(--muted);display:grid;place-items:center}
+.del:hover{color:var(--danger);border-color:var(--line)}
+.totals{display:flex;justify-content:flex-end;gap:28px;flex-wrap:wrap;padding-top:14px;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.totals span{color:var(--muted);font-size:.8rem;display:block;font-family:var(--body)}
+.totals b{font-size:1.2rem}
+@media (max-width:820px){
+  .lrow.headrow{display:none}
+  .lrow{grid-template-columns:repeat(4,minmax(0,1fr)) 40px;row-gap:8px}
+  .lrow .namecell{grid-column:1/5}
+  .lrow .del{grid-column:5;grid-row:1}
+  .cell .lbl{display:block;font-size:.72rem;margin-bottom:2px}
+  .lrow .out{grid-column:span 2;text-align:left}
+  .lrow .out::before{content:attr(data-l);display:block;font-family:var(--body);font-size:.72rem;color:var(--muted)}
+}
+.example-note{background:var(--tint);border-radius:8px;padding:10px 14px;font-size:.9rem;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+/* dashboard */
+.breakdown{display:grid;gap:12px}
+.bar-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px}
+.bar-row .nm{font-weight:600;overflow-wrap:anywhere}
+.bar-row .val{font-family:var(--mono);font-size:.88rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.bar{grid-column:1/-1;height:10px;background:var(--soft);border-radius:5px;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:5px}
+.rank{display:inline-block;font-family:var(--mono);font-size:.7rem;font-weight:700;background:var(--tint);color:var(--amber-ink);border-radius:4px;padding:1px 6px;margin-right:6px}
+.donut-wrap{position:relative;max-width:300px;margin:0 auto;aspect-ratio:1}
+.donut-center{position:absolute;inset:0;display:grid;place-content:center;text-align:center;pointer-events:none}
+.donut-center b{font-family:var(--mono);font-size:1.6rem}
+.donut-center span{font-size:.8rem;color:var(--muted)}
+.fallback-note{color:var(--muted);font-size:.86rem;text-align:center}
+.eco{display:flex;gap:14px;align-items:flex-start;background:var(--leaf-tint);border-radius:var(--r);padding:16px}
+.eco svg{flex:none;color:var(--leaf)}
+.eco b{color:var(--leaf)}
+
+/* what-if */
+.sim-row{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,2fr) auto;gap:16px;align-items:center;padding:14px 0;border-bottom:1px solid var(--line)}
+@media (max-width:700px){.sim-row{grid-template-columns:1fr}}
+.sim-row .nm{font-weight:600}
+.sim-row .sub{font-size:.82rem;color:var(--muted)}
+.slider{display:grid;grid-template-columns:minmax(0,1fr) 72px;gap:12px;align-items:center}
+.slider input{width:100%;accent-color:var(--amber)}
+.slider output{font-family:var(--mono);font-size:.9rem;text-align:right}
+.toggle{display:flex;align-items:center;gap:8px;font-size:.88rem;cursor:pointer;white-space:nowrap}
+.toggle input{accent-color:var(--leaf);width:18px;height:18px}
+.savings{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:12px}
+.sv{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px}
+.sv span{font-size:.8rem;color:var(--muted);display:block}
+.sv b{font-family:var(--mono);font-size:1.3rem;font-variant-numeric:tabular-nums}
+.sv.good b{color:var(--leaf)}
+.compare{display:grid;gap:8px}
+.cmp{display:grid;grid-template-columns:70px minmax(0,1fr) auto;gap:10px;align-items:center;font-size:.88rem}
+.cmp .track{height:18px;background:var(--soft);border-radius:4px;overflow:hidden}
+.cmp .track i{display:block;height:100%}
+
+/* tips */
+.tip{display:grid;gap:8px}
+.tip ul{margin:0;padding-left:18px;color:var(--muted)}
+.tip li+li{margin-top:4px}
+.tag{display:inline-block;font-family:var(--mono);font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:4px;background:var(--tint);color:var(--amber-ink)}
+.tag.gen{background:var(--soft);color:var(--muted)}
+
+/* tracker */
+.tform{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:12px;align-items:end}
+@media (max-width:700px){.tform{grid-template-columns:1fr 1fr}.tform .btn{grid-column:1/-1;justify-content:center}}
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{font-size:.74rem;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:500}
+td.diff-up{color:var(--danger)} td.diff-down{color:var(--leaf)}
+.hist{display:flex;align-items:flex-end;gap:10px;height:180px;padding-top:10px;position:relative;border-bottom:1px solid var(--line)}
+.hist .col{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end;min-width:0}
+.hist .colbar{width:100%;max-width:48px;background:var(--c2);border-radius:5px 5px 0 0}
+.hist .colv{font-family:var(--mono);font-size:.72rem;color:var(--muted)}
+.hist .estline{position:absolute;left:0;right:0;border-top:2px dashed var(--amber);pointer-events:none}
+.hist .estline span{position:absolute;right:0;top:-20px;font-size:.72rem;font-family:var(--mono);color:var(--amber-ink);background:var(--surface);padding:0 4px}
+.months{display:flex;gap:10px}
+.months span{flex:1;text-align:center;font-size:.74rem;color:var(--muted);font-family:var(--mono);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.empty{text-align:center;color:var(--muted);padding:28px 12px;border:1px dashed var(--line);border-radius:var(--r)}
+
+/* learn */
+.learn{display:grid;gap:8px}
+.learn p{color:var(--muted)}
+
+footer{border-top:1px solid var(--line);margin-top:8px}
+footer .in{max-width:1080px;margin:0 auto;padding-inline:16px;padding-block:20px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:.84rem}
+
+@media (prefers-reduced-motion:no-preference){.bar i,.cmp .track i,.hist .colbar{transition:width .35s ease,height .35s ease}}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="top-in">
+    <a class="brand" href="#home" data-go="home">
+      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect width="26" height="26" rx="7" fill="var(--amber)"/><path d="M14.5 4 7 14.5h5.2L11 22l8-11h-5.3z" fill="#1d1400"/></svg>
+      CarbonCheck
+    </a>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button class="tab" role="tab" data-tab="home">Home</button>
+      <button class="tab" role="tab" data-tab="calculator">Calculator</button>
+      <button class="tab" role="tab" data-tab="dashboard">Dashboard</button>
+      <button class="tab" role="tab" data-tab="whatif">What-If</button>
+      <button class="tab" role="tab" data-tab="tips">Tips</button>
+      <button class="tab" role="tab" data-tab="tracker">Tracker</button>
+      <button class="tab" role="tab" data-tab="learn">Learn</button>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <!-- HOME -->
+  <section class="panel" id="p-home" role="tabpanel">
+    <div class="hero">
+      <div>
+        <div class="eyebrow">Household energy and carbon tracker</div>
+        <h1 style="margin-top:10px">Find out which appliances are <em>eating your electric bill</em>.</h1>
+        <p>List the appliances in your home and CarbonCheck estimates how many kilowatt-hours they use each month, what that costs you, and how much CO₂ it puts into the air. Then it shows you where to cut.</p>
+        <div class="row">
+          <button class="btn primary" data-go="calculator">Start with your appliances</button>
+          <button class="btn" data-go="dashboard">See the dashboard</button>
+        </div>
+      </div>
+      <div class="meter" aria-label="Current household estimate">
+        <div class="meter-label">Estimated monthly consumption</div>
+        <div class="register" id="home-register"></div>
+        <div class="meter-sub">
+          <div><span class="meter-label">Cost</span><b id="home-cost"></b></div>
+          <div><span class="meter-label">CO₂</span><b id="home-co2"></b></div>
+          <div><span class="meter-label">Appliances</span><b id="home-count"></b></div>
+        </div>
+        <div class="meter-label" id="home-src"></div>
+      </div>
+    </div>
+
+    <ol class="steps">
+      <li><h3>List your appliances</h3><p>Pick from common household appliances or add your own, with wattage and daily hours of use.</p></li>
+      <li><h3>See the breakdown</h3><p>The dashboard ranks your appliances by consumption and shows your cost and carbon footprint.</p></li>
+      <li><h3>Test changes and track</h3><p>Try fewer hours or efficient models in the What-If simulator, then log each month's bill.</p></li>
+    </ol>
+
+    <div class="card" style="display:grid;gap:12px">
+      <h3>How the numbers are computed</h3>
+      <div class="formula"><b>kWh/month</b> = watts × quantity × hours per day × days per month ÷ 1000</div>
+      <div class="formula"><b>Cost</b> = kWh × your rate (₱/kWh) &nbsp;·&nbsp; <b>CO₂</b> = kWh × grid emission factor (kg CO₂/kWh)</div>
+      <p class="hint">Results are estimates. Actual use depends on appliance age, settings and how often motors such as compressors run.</p>
+    </div>
+  </section>
+
+  <!-- CALCULATOR -->
+  <section class="panel" id="p-calculator" role="tabpanel" hidden style="display:none">
+    <div class="head">
+      <div class="eyebrow">Step 1</div>
+      <h2>Your appliances</h2>
+      <p class="lead">Enter each appliance once. Wattage is printed on the nameplate or sticker, usually at the back or bottom. If it shows only volts and amperes, multiply them to get watts.</p>
+    </div>
+
+    <div class="example-note" id="example-note" hidden>
+      <span>You are looking at an <b>example household</b>. Replace it with your own appliances, or edit the rows below.</span>
+      <span class="row">
+        <button class="btn small" id="clear-list">Start an empty list</button>
+      </span>
+    </div>
+
+    <div class="card settings">
+      <div class="field">
+        <label for="rate">Electricity rate</label>
+        <div class="prefix"><span>₱</span><input id="rate" type="number" min="0" step="0.01" inputmode="decimal"></div>
+        <span class="hint">Your bill's total amount ÷ kWh used. ₱12.00 is only an example.</span>
+      </div>
+      <div class="field">
+        <label for="ef">Grid emission factor (kg CO₂ per kWh)</label>
+        <input id="ef" type="number" min="0" step="0.0001" inputmode="decimal">
+        <span class="hint">Default 0.78 is the DOE's 2015–2017 Mindanao grid factor (0.7797).</span>
+      </div>
+    </div>
+
+    <form class="card" id="add-form" novalidate style="display:grid;gap:12px">
+      <h3>Add an appliance</h3>
+      <div class="addform">
+        <div class="field wide">
+          <label for="preset">Appliance</label>
+          <select id="preset"></select>
+        </div>
+        <div class="field">
+          <label for="a-w">Watts (each)</label>
+          <input id="a-w" type="number" min="1" step="1" inputmode="numeric">
+        </div>
+        <div class="field">
+          <label for="a-q">Quantity</label>
+          <input id="a-q" type="number" min="1" step="1" value="1" inputmode="numeric">
+        </div>
+        <div class="field">
+          <label for="a-h">Hours/day</label>
+          <input id="a-h" type="number" min="0" max="24" step="0.5" inputmode="decimal">
+        </div>
+        <div class="field">
+          <label for="a-d">Days/month</label>
+          <input id="a-d" type="number" min="1" max="31" step="1" value="30" inputmode="numeric">
+        </div>
+        <button class="btn primary" type="submit">Add</button>
+      </div>
+      <div class="field" id="custom-name-field" hidden>
+        <label for="a-name">Appliance name</label>
+        <input id="a-name" type="text" maxlength="60" placeholder="e.g. Aquarium pump">
+      </div>
+      <p class="hint" id="preset-hint"></p>
+      <p class="err" id="add-err" role="alert"></p>
+    </form>
+
+    <div class="card">
+      <div class="list" id="list"></div>
+      <div class="totals" id="totals"></div>
+    </div>
+
+    <div class="row" style="justify-content:space-between">
+      <div class="confirm" id="reset-area">
+        <button class="btn ghost small" id="reset-btn">Load the example household</button>
+      </div>
+      <button class="btn primary" data-go="dashboard">View dashboard →</button>
+    </div>
+  </section>
+
+  <!-- DASHBOARD -->
+  <section class="panel" id="p-dashboard" role="tabpanel" hidden style="display:none">
+    <div class="head">
+      <div class="eyebrow">Step 2</div>
+      <h2>Consumption dashboard</h2>
+      <p class="lead" id="dash-lead"></p>
+    </div>
+
+    <div class="meter">
+      <div class="meter-label">Household total · per month</div>
+      <div class="register" id="dash-register"></div>
+      <div class="meter-sub">
+        <div><span class="meter-label">Monthly cost</span><b id="d-cost"></b></div>
+        <div><span class="meter-label">Yearly cost</span><b id="d-year"></b></div>
+        <div><span class="meter-label">CO₂ / month</span><b id="d-co2"></b></div>
+        <div><span class="meter-label">CO₂ / year</span><b id="d-co2y"></b></div>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="card" style="display:grid;gap:16px;align-content:start">
+        <h3>Share of total kWh</h3>
+        <div class="donut-wrap">
+          <canvas id="donut" aria-label="Share of household consumption by appliance" role="img"></canvas>
+          <div class="donut-center"><b id="donut-top"></b><span id="donut-top-name"></span></div>
+        </div>
+        <p class="fallback-note" id="chart-fallback" hidden>The chart library could not load. The breakdown list shows the same figures.</p>
+      </div>
+      <div class="card" style="display:grid;gap:16px;align-content:start">
+        <h3>Appliances ranked by monthly kWh</h3>
+        <div class="breakdown" id="breakdown"></div>
+      </div>
+    </div>
+
+    <div class="eco" id="eco"></div>
+
+    <div class="row" style="justify-content:flex-end">
+      <button class="btn" data-go="tips">Get tips for your top appliances</button>
+      <button class="btn primary" data-go="whatif">Try the What-If simulator →</button>
+    </div>
+  </section>
+
+  <!-- WHAT-IF -->
+  <section class="panel" id="p-whatif" role="tabpanel" hidden style="display:none">
+    <div class="head">
+      <div class="eyebrow">Step 3</div>
+      <h2>What-If simulator</h2>
+      <p class="lead">Drag a slider to change daily hours, or switch an appliance to an efficient model. Savings update as you go. Your saved appliance list does not change.</p>
+    </div>
+
+    <div class="savings" id="savings"></div>
+
+    <div class="card compare" id="compare"></div>
+
+    <div class="card">
+      <div id="sim-list"></div>
+      <div class="row" style="justify-content:flex-end;padding-top:14px">
+        <button class="btn small" id="sim-reset">Reset changes</button>
+      </div>
+    </div>
+    <p class="hint">Efficient-model savings use typical figures: LED bulbs use about 45% of the power of a fluorescent tube and 15% of an incandescent bulb; inverter aircons and refrigerators use roughly 40% less energy than non-inverter models in normal use.</p>
+  </section>
+
+  <!-- TIPS -->
+  <section class="panel" id="p-tips" role="tabpanel" hidden style="display:none">
+    <div class="head">
+      <div class="eyebrow">Save energy</div>
+      <h2>Tips for your household</h2>
+      <p class="lead">Tips for your three biggest consumers come first, followed by habits that help every home.</p>
+    </div>
+    <div class="grid2" id="tips"></div>
+  </section>
+
+  <!-- TRACKER -->
+  <section class="panel" id="p-tracker" role="tabpanel" hidden style="display:none">
+    <div class="head">
+      <div class="eyebrow">Monthly tracker</div>
+      <h2>Your electric bills</h2>
+      <p class="lead">Log the kWh and amount from each bill to see your trend and compare it with CarbonCheck's estimate.</p>
+    </div>
+
+    <form class="card" id="bill-form" novalidate style="display:grid;gap:12px">
+      <h3>Log a bill</h3>
+      <div class="tform">
+        <div class="field"><label for="b-month">Billing month</label><input id="b-month" type="month"></div>
+        <div class="field"><label for="b-kwh">kWh used</label><input id="b-kwh" type="number" min="0" step="1" inputmode="numeric"></div>
+        <div class="field"><label for="b-amt">Amount (₱)</label><input id="b-amt" type="number" min="0" step="0.01" inputmode="decimal"></div>
+        <button class="btn primary" type="submit">Save bill</button>
+      </div>
+      <p class="err" id="bill-err" role="alert"></p>
+    </form>
+
+    <div class="card" id="tracker-body" style="display:grid;gap:18px"></div>
+  </section>
+
+  <!-- LEARN -->
+  <section class="panel" id="p-learn" role="tabpanel" hidden style="display:none">
+    <div class="head">
+      <div class="eyebrow">Learn</div>
+      <h2>Energy, electricity and climate</h2>
+      <p class="lead">Short readings on the ideas behind CarbonCheck.</p>
+    </div>
+    <div class="grid2">
+      <article class="card learn"><h3>Watts versus kilowatt-hours</h3><p>A watt (W) measures power, how fast an appliance uses energy at a given moment. A kilowatt-hour (kWh) measures energy, power used over time. A 1,000 W flat iron used for one hour uses 1 kWh, and so does a 10 W LED bulb left on for 100 hours. Your electric meter counts kWh, and you are billed per kWh.</p></article>
+      <article class="card learn"><h3>Where your electricity's carbon comes from</h3><p>Much of the Philippines' electricity comes from power plants that burn coal, oil or natural gas, which release carbon dioxide (CO₂). Hydropower, geothermal, solar and wind produce little or none. The more fossil fuel in the grid's mix, the more CO₂ each kWh carries.</p></article>
+      <article class="card learn"><h3>What a grid emission factor is</h3><p>The grid emission factor is the average CO₂ released per unit of electricity on a grid. The Department of Energy publishes it for the Luzon-Visayas and Mindanao grids. CarbonCheck uses the <a href="https://legacy.doe.gov.ph/node/11258" target="_blank" rel="noopener">DOE's 2015–2017 Mindanao figure</a> of 0.7797 tonnes CO₂ per MWh, which equals about 0.78 kg per kWh.</p></article>
+      <article class="card learn"><h3>Standby or "phantom" power</h3><p>Many devices keep drawing power when switched off but still plugged in: TVs with remotes, set-top boxes, chargers, microwaves with clocks. Each draws only a few watts, but they draw it 24 hours a day. Unplugging them or using a power strip with a switch stops this waste.</p></article>
+      <article class="card learn"><h3>Inverter technology</h3><p>A non-inverter aircon or refrigerator runs its compressor at full speed, then switches off and on to hold the temperature. An inverter model adjusts its compressor speed instead, avoiding repeated full-power starts. In normal use this saves a large share of energy, which is why inverter appliances cost more upfront but less to run.</p></article>
+      <article class="card learn"><h3>Energy efficiency and the law</h3><p>The Energy Efficiency and Conservation Act (Republic Act 11285, 2019) makes energy efficiency a national policy and requires energy labels on appliances such as aircons and refrigerators. When buying, compare the label's efficiency rating and estimated yearly kWh, not only the price.</p></article>
+      <article class="card learn"><h3>Reading your electric bill</h3><p>Your bill shows your previous and present meter readings; the difference is the kWh you used. The total amount includes generation, transmission, distribution, system loss, taxes and other charges. Dividing the total amount by kWh used gives your effective rate per kWh, which is the rate to enter in CarbonCheck.</p></article>
+      <article class="card learn"><h3>Why small savings add up</h3><p>Cutting 30 kWh a month in one home avoids about 23 kg of CO₂ (30 × 0.78). Across 1,000 homes in a city, that becomes about 23 tonnes every month. Lower household demand also eases strain on the grid during peak hours.</p></article>
+    </div>
+  </section>
+</main>
+
+<footer><div class="in">
+  <span>CarbonCheck · ES 401 Performance Innovative Task · USTP Electrical Engineering Department</span>
+  <span>Figures are estimates. Your data stays in this browser only. · Version 3</span>
+</div></footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+(function(){
+"use strict";
+// ---------- reference data ----------
+const LED = {name:"LED bulbs", factor:0.45, label:"Switch to LED"};
+const PRESETS = [
+  {key:"aircon", name:"Air conditioner, window type (non-inverter)", w:900, h:8, cat:"aircon", eff:{name:"inverter aircon", factor:0.6, label:"Switch to inverter"}},
+  {key:"aircon-inv", name:"Air conditioner, inverter (1 HP)", w:600, h:8, cat:"aircon"},
+  {key:"fridge", name:"Refrigerator (compressor run time)", w:120, h:12, cat:"fridge", eff:{name:"inverter refrigerator", factor:0.6, label:"Switch to inverter"}},
+  {key:"fan", name:"Electric fan (stand)", w:60, h:10, cat:"fan"},
+  {key:"tv", name:"Television", w:100, h:6, cat:"tv"},
+  {key:"ricecooker", name:"Rice cooker", w:600, h:1, cat:"cooking"},
+  {key:"kettle", name:"Electric kettle", w:1500, h:0.3, cat:"cooking"},
+  {key:"induction", name:"Induction cooker", w:1800, h:1, cat:"cooking"},
+  {key:"microwave", name:"Microwave oven", w:1000, h:0.3, cat:"cooking"},
+  {key:"fluor", name:"Fluorescent lamp", w:20, h:6, cat:"lighting", eff:LED},
+  {key:"incan", name:"Incandescent bulb", w:60, h:6, cat:"lighting", eff:{name:"LED bulbs", factor:0.15, label:"Switch to LED"}},
+  {key:"led", name:"LED bulb", w:9, h:6, cat:"lighting"},
+  {key:"washer", name:"Washing machine", w:400, h:1, cat:"laundry"},
+  {key:"iron", name:"Flat iron", w:1000, h:0.5, cat:"laundry"},
+  {key:"pc", name:"Desktop computer", w:250, h:5, cat:"computer"},
+  {key:"laptop", name:"Laptop", w:60, h:6, cat:"computer"},
+  {key:"router", name:"Wi-Fi router", w:10, h:24, cat:"computer"},
+  {key:"charger", name:"Phone charger", w:10, h:3, cat:"computer"},
+  {key:"pump", name:"Water pump", w:750, h:1, cat:"pump"},
+  {key:"custom", name:"Other (enter your own)", w:"", h:"", cat:"other"}
+];
+const P = Object.fromEntries(PRESETS.map(p=>[p.key,p]));
+const TIPS = {
+  aircon:{title:"Air conditioner", items:["Set it to 25°C or higher; each degree cooler adds noticeably to its energy use.","Clean the filter every two weeks so it cools with less effort.","Close doors and windows, and use curtains to block afternoon sun.","Use an electric fan with the aircon so a higher setting still feels cool.","When replacing it, choose an inverter model with a high energy label rating."]},
+  fridge:{title:"Refrigerator", items:["Keep the door closed and decide what to get before opening it.","Let hot food cool before putting it inside.","Leave a gap behind and beside it so heat can escape.","Check the door gasket; if a sheet of paper slides out easily, it leaks cold air.","Defrost a manual-defrost freezer before the ice gets thick."]},
+  fan:{title:"Electric fans", items:["Switch fans off when you leave the room; fans cool people, not rooms.","Use a lower speed setting at night.","Clean the blades and grill so air flows freely."]},
+  tv:{title:"Television", items:["Turn it off when no one is watching instead of leaving it on as background noise.","Lower the screen brightness or use the energy-saving picture mode.","Unplug it or switch off the power strip at night to stop standby power."]},
+  cooking:{title:"Cooking appliances", items:["Unplug the rice cooker once rice is cooked instead of leaving it on warm for hours.","Boil only the water you need in the kettle.","Use lids on pots and match the pot size to the induction zone.","Cook in batches so the appliance heats up fewer times."]},
+  lighting:{title:"Lighting", items:["Replace fluorescent and incandescent bulbs with LED bulbs.","Turn off lights in empty rooms.","Open curtains and use daylight during the day.","Use task lights instead of lighting the whole room."]},
+  laundry:{title:"Laundry", items:["Run the washing machine only with full loads.","Iron clothes in one batch so the iron heats up once.","Air-dry clothes in the sun instead of using a dryer."]},
+  computer:{title:"Computers and electronics", items:["Turn on sleep mode after a few minutes of inactivity.","Shut down the desktop computer at night.","Unplug chargers once devices are full.","Switch off the Wi-Fi router when the household is away for days."]},
+  pump:{title:"Water pump", items:["Fix leaking pipes and faucets so the pump runs less often.","Fill a storage tank in one run instead of running the pump many short times.","Check that the pressure switch shuts the pump off properly."]},
+  other:{title:"Other appliances", items:["Check the nameplate wattage so your estimate is accurate.","Unplug the appliance when not in use if it has a light, clock or remote."]}
+};
+const GENERAL = {title:"Habits for every home", items:["Unplug devices with standby lights, or plug them into a power strip you switch off.","Read your meter once a week to catch unusual jumps early.","Use heavy appliances outside 6 to 9 PM, when household demand on the grid peaks.","Choose appliances with a good energy label rating when you buy.","Teach everyone at home the habits that save the most, starting with your top consumer."]};
+const EXAMPLE = () => ({
+  rate:12, ef:0.78, example:true,
+  apps:[
+    {id:1,name:"Air conditioner, window type (non-inverter)",w:900,q:1,h:8,d:30,cat:"aircon",eff:P.aircon.eff},
+    {id:2,name:"Refrigerator (compressor run time)",w:120,q:1,h:12,d:30,cat:"fridge",eff:P.fridge.eff},
+    {id:3,name:"Electric fan (stand)",w:60,q:2,h:10,d:30,cat:"fan"},
+    {id:4,name:"Television",w:100,q:1,h:6,d:30,cat:"tv"},
+    {id:5,name:"Rice cooker",w:600,q:1,h:1,d:30,cat:"cooking"},
+    {id:6,name:"Fluorescent lamp",w:20,q:5,h:6,d:30,cat:"lighting",eff:LED}
+  ],
+  bills:[
+    {id:101,month:"2026-07",kwh:362,amt:4380,example:true},
+    {id:102,month:"2026-08",kwh:371,amt:4489,example:true},
+    {id:103,month:"2026-09",kwh:340,amt:4114,example:true}
+  ]
+});
+
+// ---------- state ----------
+const KEY = "wattwise-v1";
+let S;
+try { S = JSON.parse(localStorage.getItem(KEY)); } catch(e) { S = null; }
+if (!S || !Array.isArray(S.apps)) S = EXAMPLE();
+if (!Array.isArray(S.bills)) S.bills = [];
+function save(){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e) {} }
+let sim = {};
+
+// ---------- helpers ----------
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const kwhOf = a => a.w * a.q * a.h * a.d / 1000;
+const peso = n => "₱" + n.toLocaleString("en-PH",{minimumFractionDigits:2,maximumFractionDigits:2});
+const peso0 = n => "₱" + Math.round(n).toLocaleString("en-PH");
+const f1 = n => n.toLocaleString("en-PH",{minimumFractionDigits:1,maximumFractionDigits:1});
+const f0 = n => Math.round(n).toLocaleString("en-PH");
+const total = () => S.apps.reduce((t,a)=>t+kwhOf(a),0);
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const COLORS = ["--c1","--c2","--c3","--c4","--c5","--c6","--c7"];
+const nextId = () => Math.max(0, ...S.apps.map(a=>a.id), ...S.bills.map(b=>b.id)) + 1;
+const monthName = m => { const [y,mo] = m.split("-").map(Number); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].at(mo-1) + " " + y; };
+
+function register(el, value){
+  const s = value.toFixed(1).padStart(6,"0");
+  const [ip, dp] = s.split(".");
+  el.innerHTML = ip.split("").map(c=>`<span class="digit">${c}</span>`).join("") +
+    `<span class="digit dec">${dp}</span><span class="unit">kWh</span>`;
+  el.setAttribute("aria-label", f1(value) + " kilowatt-hours per month");
+}
+function ranked(){
+  return S.apps.map(a=>({a,k:kwhOf(a)})).sort((x,y)=>y.k-x.k);
+}
+
+// ---------- tabs ----------
+const TABS = ["home","calculator","dashboard","whatif","tips","tracker","learn"];
+function show(tab){
+  if (!TABS.includes(tab)) tab = "home";
+  TABS.forEach(t=>{ const el=$("p-"+t); el.hidden = t!==tab; el.style.display = t===tab ? "grid" : "none"; });
+  document.querySelectorAll(".tab").forEach(b=>b.setAttribute("aria-selected", b.dataset.tab===tab ? "true":"false"));
+  render(tab);
+  try { localStorage.setItem(KEY+"-tab", tab); } catch(e) {}
+  if (location.hash !== "#"+tab) { try { history.replaceState(null,"","#"+tab); } catch(e) {} }
+  window.scrollTo({top:0});
+}
+document.addEventListener("click", e=>{
+  const t = e.target.closest("[data-tab],[data-go]");
+  if (!t) return;
+  e.preventDefault();
+  show(t.dataset.tab || t.dataset.go);
+});
+
+// ---------- calculator ----------
+function fillPresets(){
+  $("preset").innerHTML = PRESETS.map(p=>`<option value="${p.key}">${esc(p.name)}${p.w?` · ${p.w} W`:""}</option>`).join("");
+  applyPreset();
+}
+function applyPreset(){
+  const p = P[$("preset").value];
+  $("a-w").value = p.w; $("a-h").value = p.h;
+  $("custom-name-field").hidden = p.key !== "custom";
+  $("preset-hint").textContent = p.key==="custom" ? "Type the name and the wattage from its nameplate." : `${p.w} W is a typical rating. Change it to match your appliance's nameplate.`;
+  $("add-err").textContent = "";
+}
+$("preset").addEventListener("change", applyPreset);
+$("add-form").addEventListener("submit", e=>{
+  e.preventDefault();
+  const p = P[$("preset").value];
+  const name = p.key==="custom" ? $("a-name").value.trim() : p.name;
+  const w = parseFloat($("a-w").value), q = parseInt($("a-q").value,10), h = parseFloat($("a-h").value), d = parseInt($("a-d").value,10);
+  let err = "";
+  if (!name) err = "Type a name for the appliance.";
+  else if (!(w>0)) err = "Enter the wattage. It is printed on the appliance's nameplate.";
+  else if (!(q>=1)) err = "Quantity must be at least 1.";
+  else if (!(h>=0 && h<=24)) err = "Hours per day must be between 0 and 24.";
+  else if (!(d>=1 && d<=31)) err = "Days per month must be between 1 and 31.";
+  $("add-err").textContent = err;
+  if (err) return;
+  S.apps.push({id:nextId(), name, w, q, h, d, cat:p.cat, ...(p.eff?{eff:p.eff}:{})});
+  S.example = false; save(); sim = {};
+  $("a-name").value = ""; $("a-q").value = 1;
+  renderCalc();
+});
+$("rate").addEventListener("input", ()=>{ const v=parseFloat($("rate").value); if (v>=0){ S.rate=v; save(); renderTotals(); } });
+$("ef").addEventListener("input", ()=>{ const v=parseFloat($("ef").value); if (v>=0){ S.ef=v; save(); renderTotals(); } });
+
+function renderCalc(){
+  $("rate").value = S.rate; $("ef").value = S.ef;
+  $("example-note").hidden = !S.example;
+  const L = $("list");
+  if (!S.apps.length){
+    L.innerHTML = `<div class="empty">No appliances yet. Add your first one above, starting with the ones you use most, such as the aircon, refrigerator or electric fans.</div>`;
+  } else {
+    L.innerHTML = `<div class="lrow headrow"><span>Appliance</span><span>Watts</span><span>Qty</span><span>Hrs/day</span><span>Days</span><span class="headrow-r">kWh/mo</span><span class="headrow-r">Cost/mo</span><span></span></div>` +
+    S.apps.map(a=>`<div class="lrow" data-id="${a.id}">
+      <div class="cell namecell"><label class="lbl" for="n${a.id}">Appliance</label><input id="n${a.id}" data-f="name" value="${esc(a.name)}" maxlength="60" aria-label="Appliance name"></div>
+      <div class="cell"><label class="lbl" for="w${a.id}">Watts</label><input id="w${a.id}" data-f="w" type="number" min="1" value="${a.w}" aria-label="Watts"></div>
+      <div class="cell"><label class="lbl" for="q${a.id}">Qty</label><input id="q${a.id}" data-f="q" type="number" min="1" value="${a.q}" aria-label="Quantity"></div>
+      <div class="cell"><label class="lbl" for="h${a.id}">Hrs/day</label><input id="h${a.id}" data-f="h" type="number" min="0" max="24" step="0.5" value="${a.h}" aria-label="Hours per day"></div>
+      <div class="cell"><label class="lbl" for="d${a.id}">Days</label><input id="d${a.id}" data-f="d" type="number" min="1" max="31" value="${a.d}" aria-label="Days per month"></div>
+      <div class="out" data-l="kWh/month" data-o="k"></div>
+      <div class="out" data-l="Cost/month" data-o="c"></div>
+      <button class="del" type="button" data-del="${a.id}" aria-label="Remove ${esc(a.name)}"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4h10M6.5 4V2.5h3V4M4.5 4l.6 9.5h5.8l.6-9.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    </div>`).join("");
+  }
+  renderTotals();
+}
+function renderTotals(){
+  S.apps.forEach(a=>{
+    const r = document.querySelector(`.lrow[data-id="${a.id}"]`);
+    if (!r) return;
+    r.querySelector('[data-o="k"]').textContent = f1(kwhOf(a));
+    r.querySelector('[data-o="c"]').textContent = peso(kwhOf(a)*S.rate);
+  });
+  const t = total();
+  $("totals").innerHTML = S.apps.length ? `<div><span>Total energy</span><b>${f1(t)} kWh</b></div><div><span>Estimated bill</span><b>${peso(t*S.rate)}</b></div><div><span>Carbon footprint</span><b>${f0(t*S.ef)} kg CO₂</b></div>` : "";
+}
+$("list").addEventListener("input", e=>{
+  const inp = e.target.closest("input[data-f]"); if (!inp) return;
+  const a = S.apps.find(x=>x.id==inp.closest(".lrow").dataset.id); if (!a) return;
+  const f = inp.dataset.f;
+  if (f==="name"){ a.name = inp.value; }
+  else {
+    const v = parseFloat(inp.value);
+    const ok = f==="h" ? (v>=0 && v<=24) : f==="d" ? (v>=1 && v<=31) : v>0;
+    if (!ok) return;
+    a[f] = f==="q"||f==="d" ? Math.round(v) : v;
+  }
+  S.example = false; $("example-note").hidden = true; sim = {}; save(); renderTotals();
+});
+$("list").addEventListener("click", e=>{
+  const b = e.target.closest("[data-del]"); if (!b) return;
+  S.apps = S.apps.filter(a=>a.id!=b.dataset.del); S.example = false; sim = {}; save(); renderCalc();
+});
+$("clear-list").addEventListener("click", ()=>{
+  S.apps = []; S.bills = S.bills.filter(b=>!b.example); S.example = false; sim = {}; save(); renderCalc();
+});
+function resetIdle(){
+  $("reset-area").innerHTML = `<button class="btn ghost small" id="reset-btn">Load the example household</button>`;
+}
+$("reset-area").addEventListener("click", e=>{
+  if (e.target.id==="reset-btn"){
+    $("reset-area").innerHTML = `<span class="hint">Replace your list with the example household?</span><button class="btn small" id="reset-yes">Replace</button><button class="btn ghost small" id="reset-no">Cancel</button>`;
+  } else if (e.target.id==="reset-yes"){
+    S = EXAMPLE(); sim = {}; save(); resetIdle(); renderCalc();
+  } else if (e.target.id==="reset-no"){ resetIdle(); }
+});
+
+// ---------- dashboard ----------
+let chart = null;
+function renderDash(){
+  const t = total(), R = ranked();
+  register($("dash-register"), t);
+  $("d-cost").textContent = peso(t*S.rate);
+  $("d-year").textContent = peso0(t*S.rate*12);
+  $("d-co2").textContent = f0(t*S.ef) + " kg";
+  $("d-co2y").textContent = f1(t*S.ef*12/1000) + " t";
+  if (!R.length){
+    $("dash-lead").textContent = "Add appliances in the Calculator to see your breakdown.";
+    $("breakdown").innerHTML = `<div class="empty">No appliances yet.</div>`;
+    $("eco").innerHTML = ""; $("donut-top").textContent=""; $("donut-top-name").textContent="";
+    if (chart){ chart.destroy(); chart=null; }
+    return;
+  }
+  const top = R[0], share = t ? top.k/t*100 : 0;
+  $("dash-lead").innerHTML = `${esc(top.a.name)} uses the most electricity in your home: <b>${f0(share)}%</b> of the total, about ${peso0(top.k*S.rate)} a month.${S.example?" (Example household.)":""}`;
+  const max = top.k || 1;
+  $("breakdown").innerHTML = R.map((r,i)=>`<div class="bar-row">
+    <span class="nm">${i<3?`<span class="rank">#${i+1}</span>`:""}${esc(r.a.name)}${r.a.q>1?` ×${r.a.q}`:""}</span>
+    <span class="val">${f1(r.k)} kWh · ${peso0(r.k*S.rate)}</span>
+    <span class="bar"><i style="width:${(r.k/max*100).toFixed(1)}%;background:var(${COLORS[Math.min(i,6)]})"></i></span>
+  </div>`).join("");
+  $("donut-top").textContent = f0(share) + "%";
+  $("donut-top-name").textContent = "is the top appliance";
+  const co2 = t*S.ef, trees = co2*12/22;
+  $("eco").innerHTML = `<svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C7 6 5 9.5 5 13a7 7 0 0 0 14 0c0-3.5-2-7-7-11Zm0 20v-8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    <p>Your household releases about <b>${f0(co2)} kg of CO₂ a month</b>, or ${f1(co2*12/1000)} tonnes a year. Absorbing that would take roughly <b>${f0(trees)} mature trees</b>, at about 22 kg of CO₂ per tree per year.</p>`;
+  drawDonut(R, t);
+}
+function drawDonut(R, t){
+  if (!window.Chart){ $("chart-fallback").hidden = false; return; }
+  const top6 = R.slice(0,6), rest = R.slice(6).reduce((s,r)=>s+r.k,0);
+  const labels = top6.map(r=>r.a.name).concat(rest>0?["Others"]:[]);
+  const data = top6.map(r=>+r.k.toFixed(1)).concat(rest>0?[+rest.toFixed(1)]:[]);
+  const colors = labels.map((_,i)=>css(COLORS[Math.min(i,6)]));
+  if (chart) chart.destroy();
+  chart = new Chart($("donut"), {
+    type:"doughnut",
+    data:{labels, datasets:[{data, backgroundColor:colors, borderColor:css("--surface"), borderWidth:3, hoverOffset:6}]},
+    options:{cutout:"68%", animation:matchMedia("(prefers-reduced-motion: reduce)").matches?false:{duration:400},
+      plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>` ${c.label}: ${f1(c.parsed)} kWh (${f0(c.parsed/t*100)}%)`}}}}
+  });
+}
+
+// ---------- what-if ----------
+function simOf(a){ return sim[a.id] || (sim[a.id] = {h:a.h, swap:false}); }
+function simK(a){ const s = simOf(a); return a.w * (s.swap && a.eff ? a.eff.factor : 1) * a.q * s.h * a.d / 1000; }
+function renderSim(){
+  if (!S.apps.length){
+    $("sim-list").innerHTML = `<div class="empty">Add appliances in the Calculator first.</div>`;
+    $("savings").innerHTML = ""; $("compare").innerHTML = ""; return;
+  }
+  $("sim-list").innerHTML = ranked().map(({a})=>{ const s = simOf(a); return `<div class="sim-row" data-id="${a.id}">
+    <div><div class="nm">${esc(a.name)}${a.q>1?` ×${a.q}`:""}</div><div class="sub">${a.w} W · now ${a.h} h/day</div></div>
+    <div class="slider"><input type="range" id="s${a.id}" min="0" max="24" step="0.5" value="${s.h}" aria-label="Hours per day for ${esc(a.name)}"><output for="s${a.id}">${s.h} h/day</output></div>
+    <div>${a.eff?`<label class="toggle"><input type="checkbox" id="x${a.id}" ${s.swap?"checked":""}> ${esc(a.eff.label)}</label>`:""}</div>
+  </div>`; }).join("");
+  renderSavings();
+}
+function renderSavings(){
+  const before = total(), after = S.apps.reduce((t,a)=>t+simK(a),0), dk = before-after;
+  const pct = before ? dk/before*100 : 0, good = dk>0.05;
+  const sign = n => n<0 ? "−" : "";
+  $("savings").innerHTML = `
+    <div class="sv ${good?"good":""}"><span>Energy saved / month</span><b>${sign(-dk)}${f1(Math.abs(dk))} kWh</b></div>
+    <div class="sv ${good?"good":""}"><span>Money saved / month</span><b>${sign(-dk)}${peso0(Math.abs(dk*S.rate))}</b></div>
+    <div class="sv ${good?"good":""}"><span>Money saved / year</span><b>${sign(-dk)}${peso0(Math.abs(dk*S.rate*12))}</b></div>
+    <div class="sv ${good?"good":""}"><span>CO₂ avoided / month</span><b>${sign(-dk)}${f1(Math.abs(dk*S.ef))} kg</b></div>
+    <div class="sv ${good?"good":""}"><span>Change</span><b>${dk>=0?"−":"+"}${f0(Math.abs(pct))}%</b></div>`;
+  const max = Math.max(before, after) || 1;
+  $("compare").innerHTML = `
+    <div class="cmp"><span>Now</span><span class="track"><i style="width:${(before/max*100).toFixed(1)}%;background:var(--c7)"></i></span><span class="num">${f1(before)} kWh · ${peso0(before*S.rate)}</span></div>
+    <div class="cmp"><span>With changes</span><span class="track"><i style="width:${(after/max*100).toFixed(1)}%;background:var(${good?"--c3":"--c4"})"></i></span><span class="num">${f1(after)} kWh · ${peso0(after*S.rate)}</span></div>`;
+}
+$("sim-list").addEventListener("input", e=>{
+  const row = e.target.closest(".sim-row"); if (!row) return;
+  const a = S.apps.find(x=>x.id==row.dataset.id); if (!a) return;
+  const s = simOf(a);
+  if (e.target.type==="range"){ s.h = parseFloat(e.target.value); row.querySelector("output").textContent = s.h + " h/day"; }
+  if (e.target.type==="checkbox"){ s.swap = e.target.checked; }
+  renderSavings();
+});
+$("sim-reset").addEventListener("click", ()=>{ sim = {}; renderSim(); });
+
+// ---------- tips ----------
+function renderTips(){
+  const seen = new Set(), top = [];
+  ranked().forEach(r=>{ if (top.length<3 && !seen.has(r.a.cat)){ seen.add(r.a.cat); top.push(r); } });
+  const t = total();
+  $("tips").innerHTML = top.map((r,i)=>{ const T = TIPS[r.a.cat] || TIPS.other; return `<article class="card tip">
+    <div><span class="tag">Top consumer #${i+1} · ${t?f0(r.k/t*100):0}% of use</span></div>
+    <h3>${esc(T.title)}</h3><ul>${T.items.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></article>`; }).join("") +
+    `<article class="card tip"><div><span class="tag gen">Every household</span></div><h3>${GENERAL.title}</h3><ul>${GENERAL.items.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></article>`;
+}
+
+// ---------- tracker ----------
+$("bill-form").addEventListener("submit", e=>{
+  e.preventDefault();
+  const month = $("b-month").value, kwh = parseFloat($("b-kwh").value), amt = parseFloat($("b-amt").value);
+  let err = "";
+  if (!/^\d{4}-\d{2}$/.test(month)) err = "Pick the billing month.";
+  else if (!(kwh>0)) err = "Enter the kWh used, shown on your bill as present minus previous reading.";
+  else if (!(amt>0)) err = "Enter the total amount due on the bill.";
+  $("bill-err").textContent = err;
+  if (err) return;
+  S.bills = S.bills.filter(b=>!b.example && b.month!==month);
+  S.bills.push({id:nextId(), month, kwh, amt});
+  save(); $("b-kwh").value = ""; $("b-amt").value = "";
+  renderTracker();
+});
+function renderTracker(){
+  const B = [...S.bills].sort((a,b)=>a.month<b.month?-1:1);
+  const el = $("tracker-body");
+  if (!B.length){
+    el.innerHTML = `<div class="empty">No bills logged yet. Enter the billing month, kWh and amount from your latest electric bill above.</div>`;
+    return;
+  }
+  const est = total(), last6 = B.slice(-6), max = Math.max(est, ...last6.map(b=>b.kwh)) * 1.12 || 1;
+  const latest = B.at(-1), effRate = latest.amt/latest.kwh;
+  const anyEx = B.some(b=>b.example);
+  el.innerHTML = `
+    ${anyEx?`<div class="example-note"><span>These are <b>example bills</b>. Logging your first real bill replaces them.</span></div>`:""}
+    <div><h3>kWh per month</h3><p class="hint">Dashed line: CarbonCheck estimate of ${f1(est)} kWh.</p></div>
+    <div>
+      <div class="hist">
+        ${est>0?`<div class="estline" style="bottom:${(est/max*100).toFixed(1)}%"><span>estimate</span></div>`:""}
+        ${last6.map(b=>`<div class="col"><span class="colv">${f0(b.kwh)}</span><span class="colbar" style="height:${(b.kwh/max*100).toFixed(1)}%"></span></div>`).join("")}
+      </div>
+      <div class="months">${last6.map(b=>`<span>${monthName(b.month)}</span>`).join("")}</div>
+    </div>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Month</th><th>kWh</th><th>Amount</th><th>₱/kWh</th><th>vs. estimate</th><th></th></tr></thead>
+      <tbody>${[...B].reverse().map(b=>{ const d = est ? (b.kwh-est)/est*100 : 0; return `<tr>
+        <td>${monthName(b.month)}${b.example?' <span class="tag gen">Example</span>':""}</td><td>${f0(b.kwh)}</td><td>${peso(b.amt)}</td><td>${(b.amt/b.kwh).toFixed(2)}</td>
+        <td class="${d>2?"diff-up":d<-2?"diff-down":""}">${est?(d>=0?"+":"−")+f0(Math.abs(d))+"%":"–"}</td>
+        <td><button class="btn ghost small" data-delbill="${b.id}" aria-label="Delete ${monthName(b.month)} bill">Delete</button></td></tr>`; }).join("")}</tbody>
+    </table></div>
+    <div class="row"><span class="hint">Your latest bill works out to ${peso(effRate)} per kWh.</span>${Math.abs(effRate-S.rate)>0.005?`<button class="btn small" id="use-rate">Use ${peso(effRate)} as my rate</button>`:""}</div>`;
+}
+$("tracker-body").addEventListener("click", e=>{
+  const d = e.target.closest("[data-delbill]");
+  if (d){ S.bills = S.bills.filter(b=>b.id!=d.dataset.delbill); save(); renderTracker(); return; }
+  if (e.target.id==="use-rate"){ const l = [...S.bills].sort((a,b)=>a.month<b.month?-1:1).at(-1); S.rate = +(l.amt/l.kwh).toFixed(2); save(); renderTracker(); }
+});
+
+// ---------- home ----------
+function renderHome(){
+  const t = total();
+  register($("home-register"), t);
+  $("home-cost").textContent = peso0(t*S.rate);
+  $("home-co2").textContent = f0(t*S.ef) + " kg";
+  $("home-count").textContent = S.apps.length;
+  $("home-src").textContent = S.example ? "Example household · edit it in the Calculator" : "Your household";
+}
+
+function render(tab){
+  ({home:renderHome, calculator:renderCalc, dashboard:renderDash, whatif:renderSim, tips:renderTips, tracker:renderTracker, learn:()=>{}})[tab]();
+}
+
+// redraw chart colours when the theme changes
+const rerender = () => { if (!$("p-dashboard").hidden) renderDash(); };
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", rerender);
+new MutationObserver(rerender).observe(document.documentElement, {attributes:true, attributeFilter:["data-theme"]});
+
+fillPresets();
+let start = location.hash.slice(1);
+if (!TABS.includes(start)) { try { start = localStorage.getItem(KEY+"-tab"); } catch(e) { start = null; } }
+show(start || "home");
+})();
+</script>
+</body>
+</html>
